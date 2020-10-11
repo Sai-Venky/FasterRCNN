@@ -8,9 +8,6 @@ import visdom
 matplotlib.use('Agg')
 from matplotlib import pyplot as plot
 
-# from data.voc_dataset import VOC_BBOX_LABEL_NAMES
-
-
 VOC_BBOX_LABEL_NAMES = (
     'fly',
     'bike',

@@ -132,7 +132,7 @@ class FasterRCNN(nn.Module):
         _rpn_score = tonumpy(rpn_score)[tonumpy(gt_rpn_label) > -1]
         self.rpn_cm.add(totensor(_rpn_score, False), _gt_rpn_label.data.long())
 
-        # ------------------ ROI losses (fast rcnn loss) -------------------#
+        # ------------------ ROI losses -------------------#
         gt_roi_loc, gt_roi_label = self.proposal_target_creator.generate_roi_gt_values(selected_rois, roi_bbox_iou, tonumpy(label), tonumpy(bbox), keep_index)
 
         n_sample = roi_cls_loc.shape[0]
@@ -209,7 +209,7 @@ class FasterRCNN(nn.Module):
 
             prob = (F.softmax(totensor(roi_score), dim=1))
 
-            bbox, label, score = self._suppress(cls_bbox, prob)
+            bbox, label, score = self.select_boxes(cls_bbox, prob)
             bboxes.append(bbox)
             labels.append(label)
             scores.append(score)
@@ -217,7 +217,7 @@ class FasterRCNN(nn.Module):
         self.train()
         return bboxes, labels, scores
 
-    def _suppress(self, raw_cls_bbox, raw_prob):
+    def select_boxes(self, raw_cls_bbox, raw_prob):
         bbox = list()
         label = list()
         score = list()
