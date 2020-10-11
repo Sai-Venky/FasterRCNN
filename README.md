@@ -17,7 +17,9 @@ The model can be visualized at ```http://localhost:8097```
 The dataset can be downloaded from the following links :-
 
 wget http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar
+
 wget http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar
+
 wget http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCdevkit_08-Jun-2007.tar
 
 The dataset can be extracted and stored in the parent directory. If not, its location can be changed in `src/utils/config.py` at `voc_data_dir`
