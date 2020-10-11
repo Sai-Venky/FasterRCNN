@@ -1,24 +1,24 @@
 from __future__ import  absolute_import
-from utils.anchors import Anchors, create_anchor_base
-from utils.helper import init_params, totensor
-from utils.proposals import ProposalTargetCreator
-from models.head import get_rcnn_vgg16, VGG16RoIHead
-from models.rpn import RegionProposalNetwork
+import os
+import time
+from collections import namedtuple
+
 import numpy as np
 import torch as t
-from utils.helper import tonumpy,totensor,scalar
 from torch import nn
-from torchvision.ops import nms
 from torch.nn import functional as F
-import os
-from collections import namedtuple
-import time
-from data.util import preprocess
+from torchvision.ops import nms
+from torchnet.meter import ConfusionMeter, AverageValueMeter
 
-from utils.visualization import Visualizer
+from models.head import get_rcnn_vgg16, VGG16RoIHead
+from models.rpn import RegionProposalNetwork
 
 from utils.config import opt
-from torchnet.meter import ConfusionMeter, AverageValueMeter
+from utils.helper import init_params, tonumpy, totensor, scalar
+from utils.visualization import Visualizer
+from utils.anchors import Anchors, create_anchor_base
+from utils.proposals import ProposalTargetCreator
+from data.util import preprocess
 
 LossTuple = namedtuple('LossTuple',
                        ['rpn_loc_loss',
@@ -28,7 +28,6 @@ LossTuple = namedtuple('LossTuple',
                         'total_loss'
                         ])
 
-
 def nograd(f):
     def new_f(*args,**kwargs):
         with t.no_grad():
@@ -36,48 +35,60 @@ def nograd(f):
     return new_f
 
 class FasterRCNN(nn.Module):
+    
     """
-        Implementation of FasterRCNN
+        Implementation of FasterRCNN Architecture
     """
 
     def __init__(self):
         super(FasterRCNN, self).__init__()
-        
-        self.feat_stride = 16
+
+        # Feature Extracter
         self.extractor, self.classifier = get_rcnn_vgg16()
-        self.anchor_base = create_anchor_base()
+        
+        # RPN 
+        self.feat_stride = 16
+        self.anchor_base = create_anchor_base(self.feat_stride)
         self.anchors = Anchors(self.anchor_base)
         self.rpn = RegionProposalNetwork(self.anchors, self.feat_stride)
-        self.proposal_target_creator = ProposalTargetCreator(self.anchors)
-        # self.head = VGG16RoIHead()
+
+        self.loc_normalize_mean=(0., 0., 0., 0.)
+        self.loc_normalize_std=(0.1, 0.1, 0.2, 0.2)
+        self.proposal_target_creator = ProposalTargetCreator(self.anchors, self.loc_normalize_mean, self.loc_normalize_std)
+
+        # VGGHead   
+        self.n_class = 21
+        self.head = VGG16RoIHead(n_class=self.n_class, spatial_scale=(1. / self.feat_stride), classifier=self.classifier)
+        
+        self.vis = Visualizer(env=opt.env)
+        self.optimizer = self.get_optimizer()
         self.rpn_sigma = opt.rpn_sigma
         self.roi_sigma = opt.roi_sigma
-        self.head = VGG16RoIHead(
-            n_class=21,
-            spatial_scale=(1. / self.feat_stride),
-            classifier=self.classifier)
 
-        self.optimizer = self.get_optimizer()
-        # visdom wrapper
-        self.vis = Visualizer(env=opt.env)
-
-        # indicators for training status
+        # Indicators for Training
         self.rpn_cm = ConfusionMeter(2)
         self.roi_cm = ConfusionMeter(21)
-        self.meters = {k: AverageValueMeter() for k in LossTuple._fields}  # average loss
+        self.meters = {k: AverageValueMeter() for k in LossTuple._fields}  # Average Loss
+
+        # Prediction
+        self.pred_score_thresh = 0.7
+        self.pred_nms_thresh = 0.7
 
     def forward(self, imgs, bboxes, labels, scale):
+        
         """
         Forward Faster R-CNN 
 
-        Args:
-            imgs :- A variable with a batch of images.
-            bboxes :- A batch of bounding boxes.
-            labels :- A batch of labels.
+        Arguments:
+            imgs        :- A variable with a batch of images.
+            bboxes      :- A batch of bounding boxes.
+            labels      :- A batch of labels.
+            scale       :- scaling applied during preprocessing
 
         Returns:
-            namedtuple of 5 losses
+            LossTuple   :- namedtuple of all the five losses
         """
+
         n = bboxes.shape[0]
         if n != 1:
             raise ValueError('Currently only batch size 1 is supported.')
@@ -87,7 +98,7 @@ class FasterRCNN(nn.Module):
 
         features = self.extractor(imgs)
 
-        pred_locs, pred_scores, rois, roi_indices, image_anchors = self.rpn(features, img_size)
+        pred_locs, pred_scores, rois, roi_indices, image_anchors = self.rpn(features, img_size, scale)
 
         bbox = bboxes[0]
         label = labels[0]
@@ -104,7 +115,6 @@ class FasterRCNN(nn.Module):
             selected_rois_index)
 
         # ------------------ RPN losses -------------------#
-        gt_roi_loc, gt_roi_label = self.proposal_target_creator.generate_roi_gt_values(selected_rois, roi_bbox_iou, tonumpy(label), tonumpy(bbox), keep_index)
         gt_rpn_loc, gt_rpn_label = self.anchors.create_anchor_targets(
             tonumpy(bbox),
             image_anchors,
@@ -117,13 +127,14 @@ class FasterRCNN(nn.Module):
             gt_rpn_label.data,
             self.rpn_sigma)
 
-        # NOTE: default value of ignore_index is -100 ...
         rpn_cls_loss = F.cross_entropy(rpn_score, gt_rpn_label, ignore_index=-1)
         _gt_rpn_label = gt_rpn_label[gt_rpn_label > -1]
         _rpn_score = tonumpy(rpn_score)[tonumpy(gt_rpn_label) > -1]
         self.rpn_cm.add(totensor(_rpn_score, False), _gt_rpn_label.data.long())
 
         # ------------------ ROI losses (fast rcnn loss) -------------------#
+        gt_roi_loc, gt_roi_label = self.proposal_target_creator.generate_roi_gt_values(selected_rois, roi_bbox_iou, tonumpy(label), tonumpy(bbox), keep_index)
+
         n_sample = roi_cls_loc.shape[0]
         roi_cls_loc = roi_cls_loc.view(n_sample, -1, 4)
         roi_loc = roi_cls_loc[t.arange(0, n_sample).long(), \
@@ -155,37 +166,28 @@ class FasterRCNN(nn.Module):
         return losses
 
     @nograd
-    def predict(self, imgs):
+    def predict(self, imgs, scale):
         self.eval()
-        prepared_imgs = list()
-        sizes = list()                  
-        self.use_preset('visualize')
-        for img in imgs:
-            size = img.shape[1:]
-            prepared_imgs.append(img)
-            sizes.append(size)
 
         bboxes = list()
         labels = list()
         scores = list()
 
-        for img, size in zip(prepared_imgs, sizes):
+        for img in imgs:
             img = totensor(img[None]).float()
-            scale = img.shape[3] / size[1]
-            roi_cls_loc, roi_scores, rois, _ = self(img, scale=scale)
-
-            img_size = x.shape[2:]
+            _, _, H, W = img.shape
+            img_size = (H, W)
 
             features = self.extractor(img)
-            pred_locs, pred_scores, rois, roi_indices, image_anchors = self.rpn(features, img_size)
+            pred_locs, pred_scores, rois, roi_indices, image_anchors = self.rpn(features, img_size, scale)
             roi_cls_loc, roi_score = self.head(
                 features,
                 rois,
                 roi_indices)            
         
-            roi_score = roi_scores.data
+            roi_score = roi_score.data
             roi_cls_loc = roi_cls_loc.data
-            roi = totensor(rois) / scale
+            roi = totensor(rois)
 
             # Convert predictions to bounding boxes in image coordinates.
             # Bounding boxes are scaled to the scale of the input images.
@@ -202,8 +204,8 @@ class FasterRCNN(nn.Module):
             cls_bbox = totensor(cls_bbox)
             cls_bbox = cls_bbox.view(-1, self.n_class * 4)
             # clip bounding box
-            cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])
-            cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=size[1])
+            cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=img_size[0])
+            cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=img_size[1])
 
             prob = (F.softmax(totensor(roi_score), dim=1))
 
@@ -212,7 +214,6 @@ class FasterRCNN(nn.Module):
             labels.append(label)
             scores.append(score)
 
-        self.use_preset('evaluate')
         self.train()
         return bboxes, labels, scores
 
@@ -220,74 +221,23 @@ class FasterRCNN(nn.Module):
         bbox = list()
         label = list()
         score = list()
-        # skip cls_id = 0 because it is the background class
+
         for l in range(1, self.n_class):
             cls_bbox_l = raw_cls_bbox.reshape((-1, self.n_class, 4))[:, l, :]
             prob_l = raw_prob[:, l]
-            mask = prob_l > self.score_thresh
+            mask = prob_l > self.pred_score_thresh
             cls_bbox_l = cls_bbox_l[mask]
             prob_l = prob_l[mask]
-            keep = nms(cls_bbox_l, prob_l,self.nms_thresh)
-            # import ipdb;ipdb.set_trace()
-            # keep = cp.asnumpy(keep)
+            keep = nms(cls_bbox_l, prob_l, self.pred_nms_thresh)
             bbox.append(cls_bbox_l[keep].cpu().numpy())
-            # The labels are in [0, self.n_class - 2].
             label.append((l - 1) * np.ones((len(keep),)))
             score.append(prob_l[keep].cpu().numpy())
+
         bbox = np.concatenate(bbox, axis=0).astype(np.float32)
         label = np.concatenate(label, axis=0).astype(np.int32)
         score = np.concatenate(score, axis=0).astype(np.float32)
         return bbox, label, score
 
-
-    def save(self, save_optimizer=False, save_path=None, **kwargs):
-        """serialize models include optimizer and other info
-        return path where the model-file is stored.
-
-        Args:
-            save_optimizer (bool): whether save optimizer.state_dict().
-            save_path (string): where to save model, if it's None, save_path
-                is generate using time str and info from kwargs.
-        
-        Returns:
-            save_path(str): the path to save models.
-        """
-        save_dict = dict()
-
-        save_dict['model'] = self.faster_rcnn.state_dict()
-        save_dict['config'] = opt._state_dict()
-        save_dict['other_info'] = kwargs
-        save_dict['vis_info'] = self.vis.state_dict()
-
-        if save_optimizer:
-            save_dict['optimizer'] = self.optimizer.state_dict()
-
-        if save_path is None:
-            timestr = time.strftime('%m%d%H%M')
-            save_path = 'checkpoints/fasterrcnn_%s' % timestr
-            for k_, v_ in kwargs.items():
-                save_path += '_%s' % v_
-
-        save_dir = os.path.dirname(save_path)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        t.save(save_dict, save_path)
-        self.vis.save([self.vis.env])
-        return save_path
-
-    def load(self, path, load_optimizer=True, parse_opt=False, ):
-        state_dict = t.load(path)
-        if 'model' in state_dict:
-            self.faster_rcnn.load_state_dict(state_dict['model'])
-        else: 
-            self.faster_rcnn.load_state_dict(state_dict)
-            return self
-        if parse_opt:
-            opt._parse(state_dict['config'])
-        if 'optimizer' in state_dict and load_optimizer:
-            self.optimizer.load_state_dict(state_dict['optimizer'])
-        return self
 
     def update_meters(self, losses):
         loss_d = {k: scalar(v) for k, v in losses._asdict().items()}
@@ -300,26 +250,58 @@ class FasterRCNN(nn.Module):
         self.roi_cm.reset()
         self.rpn_cm.reset()
 
+
     def get_meter_data(self):
         return {k: v.value()[0] for k, v in self.meters.items()}
 
+
     def get_optimizer(self):
+        
         """
-        return optimizer
+            returns Optimizer for FasterRCNN
         """
-        lr = opt.lr
         params = []
         for key, value in dict(self.named_parameters()).items():
             if value.requires_grad:
                 if 'bias' in key:
-                    params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]
+                    params += [{'params': [value], 'lr': opt.lr * 2, 'weight_decay': 0}]
                 else:
-                    params += [{'params': [value], 'lr': lr, 'weight_decay': opt.weight_decay}]
-        if opt.use_adam:
-            self.optimizer = t.optim.Adam(params)
-        else:
-            self.optimizer = t.optim.SGD(params, momentum=0.9)
+                    params += [{'params': [value], 'lr': opt.lr, 'weight_decay': opt.weight_decay}]
+        self.optimizer = t.optim.SGD(params, momentum=0.9)
         return self.optimizer
+
+
+    def scale_lr(self, decay=0.1):
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] *= decay
+        return self.optimizer
+
+
+    def save(self):
+        timestr = time.strftime('%m%d%H%M')
+        save_path = 'checkpoints/fasterrcnn_%s' % timestr
+
+        save_dict = dict()
+        save_dict['model'] = self.faster_rcnn.state_dict()
+        save_dict['config'] = opt._state_dict()
+        save_dict['vis_info'] = self.vis.state_dict()
+        save_dict['optimizer'] = self.optimizer.state_dict()
+
+        save_dir = os.path.dirname(save_path)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        t.save(save_dict, save_path)
+        self.vis.save([self.vis.env])
+        return save_path
+
+
+    def load(self, path):
+        state_dict = t.load(path)
+        self.faster_rcnn.load_state_dict(state_dict['model'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        opt._parse(state_dict['config'])
+        return self
 
 def _smooth_l1_loss(x, t, in_weight, sigma):
     sigma2 = sigma ** 2

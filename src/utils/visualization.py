@@ -38,7 +38,7 @@ VOC_BBOX_LABEL_NAMES = (
 def vis_image(img, ax=None):
     """Visualize a color image.
 
-    Args:
+    Arguments:
         img (~numpy.ndarray): An array of shape :math:`(3, height, width)`.
             This is in RGB format and the range of its value is
             :math:`[0, 255]`.
@@ -63,7 +63,7 @@ def vis_image(img, ax=None):
 def vis_bbox(img, bbox, label=None, score=None, ax=None):
     """Visualize bounding boxes inside image.
 
-    Args:
+    Arguments:
         img (~numpy.ndarray): An array of shape :math:`(3, height, width)`.
             This is in RGB format and the range of its value is
             :math:`[0, 255]`.

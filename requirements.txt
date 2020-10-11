@@ -1,0 +1,9 @@
+visdom
+torchvision
+scikit-image
+tqdm
+pprint
+matplotlib
+ipdb
+cython
+git+https://github.com/pytorch/tnt.git@master

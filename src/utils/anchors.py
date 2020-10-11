@@ -18,7 +18,7 @@ class Anchors(object):
 
         """
             Responsible for decoding the input bbox with passed offset and scales values
-            Args:-
+            Arguments:-
                 input_bboxes   :- An array containing a list of bboxes; top left and bottom right locations.
                 offsets_scales :- An array containing the list of bboxes; Y, X centre (offsets) and H, W (scales).
             Returns:-
@@ -55,7 +55,7 @@ class Anchors(object):
     
         """
             Responsible for encoding the input bbox with output bbox values
-            Args:-
+            Arguments:-
                 input_bboxes   :- An array containing a list of bboxes; top left and bottom right locations.
                 output_bboxes  :- An array containing a list of bboxes; top left and bottom right locations.
             Returns:-
@@ -72,6 +72,10 @@ class Anchors(object):
         output_cy = output_bboxes[:, 0] + 0.5 * output_height
         output_cx = output_bboxes[:, 1] + 0.5 * output_width
 
+        eps = np.finfo(input_height.dtype).eps
+        input_height = np.maximum(input_height, eps)
+        input_width = np.maximum(input_width, eps)
+
         dy = (output_cy - input_cy) / input_height
         dx = (output_cx - input_cx) / input_width
         dh = np.log(output_height / input_height)
@@ -85,7 +89,7 @@ class Anchors(object):
     
         """
             Calculates the Intersection Over Union of the bboxes
-            Args:-
+            Arguments:-
                 first_bbox    :- An array containing a list of bboxes; top left and bottom right locations.
                 second_bbox   :- An array containing a list of bboxes; top left and bottom right locations.
             Returns:-
@@ -115,7 +119,7 @@ class Anchors(object):
         
         """
             Generates all the anchors for image from base anchor
-            Args:-
+            Arguments:-
                 height        :- The height of the image
                 width         :- The width of the image
                 stride        :- The stride of the image
@@ -139,7 +143,7 @@ class Anchors(object):
 
         """
             Computes the two real locations and scores for computing loss with RPN
-            Args:-
+            Arguments:-
                 bbox           :- The GT bounding boxes of the image
                 image_anchors  :- Contains all the possible anchors for the image.
                 img_size       :- The size of the image H X W
@@ -174,7 +178,7 @@ class Anchors(object):
 
         """
             Computes the two real locations and scores for computing loss with RPN
-            Args:-
+            Arguments:-
                 inside_index   :- The indexes for the bboxes which lie inside image
                 image_anchors  :- Contains all the possible anchors for the image.
                 bbox           :- The size of the image H X W
@@ -196,7 +200,6 @@ class Anchors(object):
         argmax_ious_for_each_bbox = np.where(ious == max_ious_each_bbox)[0]
 
         real_scores[max_ious < self.neg_iou_thresh] = 0
-        #  check this
         real_scores[argmax_ious_for_each_bbox] = 1
         real_scores[max_ious >= self.pos_iou_thresh] = 1
 
@@ -217,12 +220,12 @@ class Anchors(object):
         return argmax_ious, real_scores
 
 
-def create_anchor_base(scales = [8, 16, 32], ratios = [0.5, 1, 2], stride = 16):
+def create_anchor_base(stride, scales = [8, 16, 32], ratios = [0.5, 1, 2]):
 
     """
         Creates the initial anchor base from a given set of scales and ratios.
         The base anchors can be of square and rectangle shapes.
-        Args:-
+        Arguments:-
             scales      :- A list of all the possible scales. eg :- [8, 16, 32]
             ratios      :- A list of all the possible ratios. eg :- [0.5, 1, 2]
             stride      :- Factor by which VGGNet has downsampled the image

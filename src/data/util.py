@@ -4,13 +4,12 @@ from skimage import transform as sktsf
 from torchvision import transforms as tvtsf
 import torch as t
 
-def read_image(path, dtype=np.float32):
+def read_image(path):
 
     """
     This function reads an image from given path.
-    Args:
+    Arguments:
         path           :- A path of image file.
-        dtype          :- The type of array. The default value is :obj:`~numpy.float32`.
     Returns:
         ~numpy.ndarray :- An image.
     """
@@ -18,7 +17,7 @@ def read_image(path, dtype=np.float32):
     f = Image.open(path)
     try:
         img = f.convert('RGB')
-        img = np.asarray(img, dtype=dtype)
+        img = np.asarray(img, dtype=np.float32)
     finally:
         if hasattr(f, 'close'):
             f.close()
@@ -36,7 +35,7 @@ def resize_bbox(bbox, in_size, out_size):
     """
     Resizes Bounding Boxes
 
-    Args:
+    Arguments:
         bbox            :- The GT bounding boxes of the image
         in_size         :- A tuple with height and the width of the image before resized.
         out_size        :- A tuple with height and the width of the image after resized.
@@ -59,11 +58,11 @@ def flip_bbox(bbox, size, y_flip=False, x_flip=False):
     """
     Flips Bounding Boxes.
 
-    Args:
+    Arguments:
         bbox            :- The GT bounding boxes of the image
         size            :- A tuple with height and the width of the image before resized.
         y_flip (bool)   :- vertical flip of an image.
-        x_flip (bool)   :- horizontal flip ofan image.
+        x_flip (bool)   :- horizontal flip of an image.
     Returns:
         ~numpy.ndarray  :- Bounding boxes flipped according to the given image shapes.
     """
@@ -91,7 +90,7 @@ def transform(in_data):
     """
     Transforms the image
 
-    Args:
+    Arguments:
         in_data :- Contains the image, bboxes and labels 
     Returns:
         img     :- The images in RGB format
@@ -120,7 +119,7 @@ def preprocess(img, min_size=600, max_size=1000):
     """
     Preprocess an image for feature extraction.
 
-    Args:
+    Arguments:
         img :- The images in RGB format
     Returns:
         A preprocessed image.
