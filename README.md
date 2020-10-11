@@ -7,7 +7,7 @@ Implements Faster R-CNN Architecture
 ```pip install requirements.txt```
 
 To train the model, please run 
-```python train.py```
+```python src/train.py```
 
 Once visom is installed, to run it , open a terminal and type ```visdom```
 The model can be visualized at ```http://localhost:8097```
