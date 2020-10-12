@@ -1,6 +1,7 @@
 # FasterRCNN
 
 Implements Faster R-CNN Architecture
+https://medium.com/@venkysai.96/faster-r-cnn-object-detection-7e48e5b9a906
 
 ### Installation and Running
 
@@ -42,6 +43,14 @@ The directory structure is as follows :-
     * helper : helper methods
     * proposals : used to generate rpn layer and its corresponding ground truth proposals.
     * visualization : visualization utility functions  
+
+ ### Results
+
+![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/roi_cls_loss.png)
+![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/roi_loc_loss.png)
+![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/rpn_cls_loss.png)
+![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/total_loss.png)
+
 
  ### Acknowledgement
 

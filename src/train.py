@@ -3,10 +3,11 @@ import os
 import ipdb
 import matplotlib
 from tqdm import tqdm
+import torch
 from torch.utils import data as data_
 from data.dataset import Dataset, inverse_normalize
 from models.faster_rcnn import FasterRCNN
-from utils.helper import tonumpy, totensor, scalar
+from utils.helper import tonumpy, totensor, scalar, convert_cuda
 from utils.visualization import visdom_bbox
 from utils.config import opt
 
@@ -18,9 +19,11 @@ def train(**kwargs):
 
     dataset = Dataset(opt)
 
+    cuda = torch.cuda.is_available()
     print('Loading fom the Dataset')
     dataloader = data_.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.num_workers)
     faster_rcnn = FasterRCNN()
+    faster_rcnn = convert_cuda(faster_rcnn, cuda)
     print('Model Construct Completed')
 
     if opt.load_path:
@@ -36,27 +39,26 @@ def train(**kwargs):
         for ii, (img, bbox_, label_, scale) in tqdm(enumerate(dataloader)):
 
             scale = scalar(scale)
-            img, bbox, label = img.float(), bbox_, label_
+            img, bbox, label = convert_cuda(img, cuda).float(),  convert_cuda(bbox_, cuda), convert_cuda(label_, cuda)
             losses = faster_rcnn.train_step(img, bbox, label, scale)
 
             if (ii + 1) % opt.plot_every == 0:
-
                 # plot loss
                 faster_rcnn.vis.plot_many(faster_rcnn.get_meter_data())
 
                 ori_img_ = inverse_normalize(tonumpy(img[0]))
                 # plot Groudtruth bboxes
                 gt_img = visdom_bbox(ori_img_,
-                                     tonumpy(bbox_[0]),
-                                     tonumpy(label_[0]))
+                                    tonumpy(bbox_[0]),
+                                    tonumpy(label_[0]))
                 faster_rcnn.vis.img('gt_img', gt_img)
 
                 # plot Predicted bboxes
                 _bboxes, _labels, _scores = faster_rcnn.predict([ori_img_], scale)
                 pred_img = visdom_bbox(ori_img_,
-                                       tonumpy(_bboxes[0]),
-                                       tonumpy(_labels[0]).reshape(-1),
-                                       tonumpy(_scores[0]))
+                                    tonumpy(_bboxes[0]),
+                                    tonumpy(_labels[0]).reshape(-1),
+                                    tonumpy(_scores[0]))
                 faster_rcnn.vis.img('pred_img', pred_img)
 
                 # rpn confusion matrix(meter)
@@ -64,7 +66,7 @@ def train(**kwargs):
                 # roi confusion matrix
                 faster_rcnn.vis.img('roi_cm', totensor(faster_rcnn.roi_cm.conf, False).float())
 
-        lr_ = faster_rcnn.faster_rcnn.optimizer.param_groups[0]['lr']
+        lr_ = faster_rcnn.optimizer.param_groups[0]['lr']
         log_info = 'lr:{}, loss:{}'.format(str(lr_), str(faster_rcnn.get_meter_data()))
         faster_rcnn.vis.log(log_info)
 

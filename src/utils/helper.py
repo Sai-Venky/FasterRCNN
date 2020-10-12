@@ -34,3 +34,9 @@ def tonumpy(data):
     if isinstance(data, t.Tensor):
         return data.detach().cpu().numpy()
 
+def convert_cuda(data, cuda_enabled):
+    if cuda_enabled:
+        return data.cuda()
+    else:
+        return data
+

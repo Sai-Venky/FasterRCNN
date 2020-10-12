@@ -14,7 +14,7 @@ from models.head import get_rcnn_vgg16, VGG16RoIHead
 from models.rpn import RegionProposalNetwork
 
 from utils.config import opt
-from utils.helper import init_params, tonumpy, totensor, scalar
+from utils.helper import init_params, tonumpy, totensor, scalar, convert_cuda
 from utils.visualization import Visualizer
 from utils.anchors import Anchors, create_anchor_base
 from utils.proposals import ProposalTargetCreator
@@ -69,6 +69,7 @@ class FasterRCNN(nn.Module):
         self.rpn_cm = ConfusionMeter(2)
         self.roi_cm = ConfusionMeter(21)
         self.meters = {k: AverageValueMeter() for k in LossTuple._fields}  # Average Loss
+        self.cuda = t.cuda.is_available()
 
         # Prediction
         self.pred_score_thresh = 0.7
@@ -127,7 +128,7 @@ class FasterRCNN(nn.Module):
             gt_rpn_label.data,
             self.rpn_sigma)
 
-        rpn_cls_loss = F.cross_entropy(rpn_score, gt_rpn_label, ignore_index=-1)
+        rpn_cls_loss = F.cross_entropy(rpn_score, convert_cuda(gt_rpn_label, self.cuda), ignore_index=-1)
         _gt_rpn_label = gt_rpn_label[gt_rpn_label > -1]
         _rpn_score = tonumpy(rpn_score)[tonumpy(gt_rpn_label) > -1]
         self.rpn_cm.add(totensor(_rpn_score, False), _gt_rpn_label.data.long())
@@ -137,7 +138,7 @@ class FasterRCNN(nn.Module):
 
         n_sample = roi_cls_loc.shape[0]
         roi_cls_loc = roi_cls_loc.view(n_sample, -1, 4)
-        roi_loc = roi_cls_loc[t.arange(0, n_sample).long(), \
+        roi_loc = roi_cls_loc[ convert_cuda(t.arange(0, n_sample).long(), self.cuda), \
                               totensor(gt_roi_label).long()]
         gt_roi_label = totensor(gt_roi_label).long()
         gt_roi_loc = totensor(gt_roi_loc)
@@ -148,7 +149,7 @@ class FasterRCNN(nn.Module):
             gt_roi_label.data,
             self.roi_sigma)
 
-        roi_cls_loss = nn.CrossEntropyLoss()(roi_score, gt_roi_label)
+        roi_cls_loss = nn.CrossEntropyLoss()(roi_score, convert_cuda(gt_roi_label, self.cuda))
 
         self.roi_cm.add(totensor(roi_score, False), gt_roi_label.data.long())
 
@@ -282,9 +283,8 @@ class FasterRCNN(nn.Module):
         save_path = 'checkpoints/fasterrcnn_%s' % timestr
 
         save_dict = dict()
-        save_dict['model'] = self.faster_rcnn.state_dict()
+        save_dict['model'] = self.state_dict()
         save_dict['config'] = opt._state_dict()
-        save_dict['vis_info'] = self.vis.state_dict()
         save_dict['optimizer'] = self.optimizer.state_dict()
 
         save_dir = os.path.dirname(save_path)
@@ -292,13 +292,12 @@ class FasterRCNN(nn.Module):
             os.makedirs(save_dir)
 
         t.save(save_dict, save_path)
-        self.vis.save([self.vis.env])
         return save_path
 
 
     def load(self, path):
-        state_dict = t.load(path)
-        self.faster_rcnn.load_state_dict(state_dict['model'])
+        state_dict = t.load(path, map_location=t.device('cpu'))
+        self.load_state_dict(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
         opt._parse(state_dict['config'])
         return self
