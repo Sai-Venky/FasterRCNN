@@ -71,7 +71,6 @@ def train(**kwargs):
         faster_rcnn.vis.log(log_info)
 
         if epoch == 9:
-            faster_rcnn.load(best_path)
             faster_rcnn.scale_lr(opt.lr_decay)
             lr_ = lr_ * opt.lr_decay
 
