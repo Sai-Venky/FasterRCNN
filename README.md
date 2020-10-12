@@ -51,7 +51,7 @@ The directory structure is as follows :-
 ![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/roi_loc_loss.png)
 ![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/rpn_cls_loss.png)
 ![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/total_loss.png)
-
+![alt text](https://github.com/Sai-Venky/FasterRCNN/blob/master/imgs/result.png)
 
  ### Acknowledgement
 
