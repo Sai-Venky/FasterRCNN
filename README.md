@@ -4,6 +4,16 @@ Implements Faster R-CNN Architecture
 
 https://medium.com/@venkysai.96/faster-r-cnn-object-detection-7e48e5b9a906
 
+<ul>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#installation-and-running">Installation and Running</a></li>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#dataset">Dataset</a></li>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#directory-layout">Directory Layout</a></li>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#results">Results</a></li>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#acknowledgement">Acknowledgement</a></li>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#contributing">Contributing</a></li>
+<li><a href="https://github.com/Sai-Venky/FasterRCNN#licence">Licence</a></li>
+</ul>
+
 ### Installation and Running
 
 ```pip install requirements.txt```
